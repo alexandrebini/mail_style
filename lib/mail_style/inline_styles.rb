@@ -22,7 +22,6 @@ module MailStyle
 
       def write_inline_styles
         parts = collect_parts(@parts)
-
         # Parse only text/html parts
         parsable_parts(@parts).each do |part|
           part.body = parse_html(part.body)
@@ -49,7 +48,7 @@ module MailStyle
 
         # Write inline styles
         element_styles = {}
-
+        
         css_parser.each_selector do |selector, declaration, specificity|
           next if selector.include?(':')
           html_document.css(selector).each do |element|
@@ -140,7 +139,7 @@ module MailStyle
 
       # Update image urls
       def update_image_urls(style)
-        if default_url_options[:host].present?
+        if url_options[:host].present?
           # Replace urls in stylesheets
           style.gsub!($1, absolutize_url($1, 'stylesheets')) if style[/url\(['"]?(.*?)['"]?\)/i]
         end
@@ -153,11 +152,11 @@ module MailStyle
         original_url = url
 
         unless original_url[URI::regexp(%w[http https])]
-          protocol = default_url_options[:protocol]
+          protocol = url_options[:protocol]
           protocol = "http://" if protocol.blank?
           protocol+= "://" unless protocol.include?("://")
 
-          host = default_url_options[:host]
+          host = url_options[:host]
 
           [host,protocol].each{|r| original_url.gsub!(r,"") }
           host = protocol+host unless host[URI::regexp(%w[http https])]
@@ -172,7 +171,6 @@ module MailStyle
       # Css Parser
       def css_parser
         parser = CssParser::Parser.new
-
         parser.add_block!(css_rules) if @css.present?
         parser.add_block!(@inline_rules)
         parser
@@ -196,16 +194,22 @@ module MailStyle
           File.exist?(path) ? path : raise(CSSFileNotFound)
         end
       end
+      
+      def url_options
+        ActionMailer::Base.default_url_options
+      end 
     end
 
     def self.included(receiver)
       receiver.send :include, InstanceMethods
-      receiver.class_eval do
-        adv_attr_accessor :css
-        alias_method_chain :create_mail, :inline_styles
+      if receiver==ActionMailer::Base
+        receiver.send :include, MailStyle::InlineStyles::ActionMailerMethods
+      elsif receiver==ActionController::Base
+        receiver.send :include, MailStyle::InlineStyles::ActionControllerMethods
       end
     end
   end
 end
 
 ActionMailer::Base.send :include, MailStyle::InlineStyles
+ActionController::Base.send :include, MailStyle::InlineStyles
